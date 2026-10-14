@@ -4,18 +4,14 @@ declare(strict_types=1);
 
 namespace CustomWing;
 
-use JsonMapper;
-use JsonMapper_Exception;
 use pocketmine\command\Command;
 use pocketmine\command\CommandSender;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerQuitEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
-use pocketmine\form\FormValidationException;
 use pocketmine\network\mcpe\JwtException;
 use pocketmine\network\mcpe\JwtUtils;
 use pocketmine\network\mcpe\protocol\LoginPacket;
-use pocketmine\network\mcpe\protocol\types\login\ClientData;
 use pocketmine\network\PacketHandlingException;
 use pocketmine\permission\DefaultPermissions;
 use pocketmine\player\Player;
@@ -24,21 +20,17 @@ use pocketmine\utils\TextFormat;
 use function array_keys;
 use function count;
 use function extension_loaded;
-use function file_exists;
-use function file_get_contents;
-use function file_put_contents;
 use function glob;
 use function hash;
-use function imagecreatefrompng;
 use function is_dir;
 use function is_file;
 use function is_string;
-use function json_decode;
-use function json_encode;
 use function strtolower;
 use function unlink;
 use function mkdir;
 use function dirname;
+use function strlen;
+use function preg_match;
 
 final class Main extends PluginBase implements Listener{
 	/** @var array<string, string> */
@@ -77,12 +69,9 @@ final class Main extends PluginBase implements Listener{
 		"Exit"
 	];
 
-	public static ?self $instance = null;
-
 	public int $json = 0;
 
 	protected function onEnable() : void{
-		self::$instance = $this;
 		if(!$this->checkRequirements()){
 			$this->getServer()->getPluginManager()->disablePlugin($this);
 			return;
@@ -93,6 +82,7 @@ final class Main extends PluginBase implements Listener{
 		$this->getLogger()->info($this->json . " Geometry Skin Confirmed");
 	}
 
+	/** @param list<string> $args */
 	public function onCommand(CommandSender $sender, Command $command, string $label, array $args) : bool{
 		if(strtolower($command->getName()) !== "customwing"){
 			return false;
@@ -113,7 +103,7 @@ final class Main extends PluginBase implements Listener{
 		}
 
 		$data = self::decodeClientData($packet->clientDataJwt);
-		$name = $data->ThirdPartyName;
+		$name = $data["playerName"];
 		$skinPath = $this->getSkinPath($name);
 		if($skinPath === false){
 			$this->getLogger()->warning("Ignored login skin data with an invalid player name.");
@@ -126,7 +116,7 @@ final class Main extends PluginBase implements Listener{
 			return;
 		}
 
-		if($data->PersonaSkin){
+		if($data["personaSkin"]){
 			$defaultSkin = $this->getDataFolder() . "steve.png";
 			if(!is_file($defaultSkin) || !copy($defaultSkin, $skinPath)){
 				$this->getLogger()->warning("Could not save the fallback skin for a persona-skin player.");
@@ -134,12 +124,12 @@ final class Main extends PluginBase implements Listener{
 			return;
 		}
 
-		$skinBytes = base64_decode($data->SkinData, true);
+		$skinBytes = base64_decode($data["skinData"], true);
 		if(!is_string($skinBytes)){
 			$this->getLogger()->warning("Ignored invalid encoded player skin data.");
 			return;
 		}
-		if(!(new saveSkin())->saveSkin($skinBytes, $name)){
+		if(!(new saveSkin($this))->saveSkin($skinBytes, $name)){
 			$this->getLogger()->warning("Could not save an unsupported or invalid player skin.");
 		}
 	}
@@ -189,12 +179,12 @@ final class Main extends PluginBase implements Listener{
 			$this->Form($player, TextFormat::RED . "You do not have permission to use this wing.");
 			return;
 		}
-		(new setSkin())->setSkin($player, $wingName);
+		(new setSkin($this))->setSkin($player, $wingName);
 	}
 
 	public function resetSkin(Player $player) : void{
 		$player->sendMessage("Reset to original skin successfully.");
-		(new resetSkin())->setSkin($player);
+		(new resetSkin($this))->setSkin($player);
 	}
 
 	public function checkSkin() : void{
@@ -241,25 +231,19 @@ final class Main extends PluginBase implements Listener{
 		return true;
 	}
 
-	public static function decodeClientData(string $clientDataJwt) : ClientData{
+	/** @return array{playerName: string, personaSkin: bool, skinData: string} */
+	public static function decodeClientData(string $clientDataJwt) : array{
 		try{
 			[, $clientDataClaims, ] = JwtUtils::parse($clientDataJwt);
 		}catch(JwtException $exception){
 			throw PacketHandlingException::wrap($exception);
 		}
-
-		$mapper = new JsonMapper();
-		$mapper->bEnforceMapType = false;
-		$mapper->bExceptionOnMissingData = true;
-		$mapper->bExceptionOnUndefinedProperty = true;
-		try{
-			$clientData = $mapper->map($clientDataClaims, new ClientData());
-		}catch(JsonMapper_Exception $exception){
-			throw PacketHandlingException::wrap($exception);
+		$playerName = $clientDataClaims["ThirdPartyName"] ?? null;
+		$personaSkin = $clientDataClaims["PersonaSkin"] ?? false;
+		$skinData = $clientDataClaims["SkinData"] ?? null;
+		if(!is_string($playerName) || !is_bool($personaSkin) || !is_string($skinData)){
+			throw PacketHandlingException::wrap(new \UnexpectedValueException("Login client data is missing valid skin fields"));
 		}
-		if(!$clientData instanceof ClientData){
-			throw new \UnexpectedValueException("Could not map login client data");
-		}
-		return $clientData;
+		return ["playerName" => $playerName, "personaSkin" => $personaSkin, "skinData" => $skinData];
 	}
 }

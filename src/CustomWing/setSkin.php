@@ -1,152 +1,188 @@
 <?php
 
+declare(strict_types=1);
+
 namespace CustomWing;
 
+use GdImage;
 use pocketmine\entity\Skin;
 use pocketmine\player\Player;
 
-class setSkin
-{
+final class setSkin{
+	public function __construct(private Main $plugin){}
 
-    public function setSkin(Player $player, string $stuffName)
-    {
-        $locate = "skin";
-        $skin = $player->getSkin();
-        $name = $player->getName();
-        $path = Main::$instance->getSkinPath($name);
-        if ($path === false || !is_file($path)) {
-            $player->sendMessage("Your player skin is not available yet. Please reconnect and try again.");
-            return;
-        }
+	public function setSkin(Player $player, string $wingName) : void{
+		$skinPath = $this->plugin->getSkinPath($player->getName());
+		if(!is_string($skinPath) || !is_file($skinPath)){
+			$player->sendMessage("Your player skin is not available yet. Please reconnect and try again.");
+			return;
+		}
+		$dimensions = @getimagesize($skinPath);
+		if($dimensions === false || $dimensions[0] <= 0 || $dimensions[1] <= 0){
+			$player->sendMessage("Your saved player skin could not be read.");
+			return;
+		}
 
-        $size = @getimagesize($path);
-        if (!is_array($size) || !isset($size[0], $size[1]) || $size[0] <= 0 || $size[1] <= 0) {
-            $player->sendMessage("Your saved player skin could not be read.");
-            return;
-        }
+		$geometryPath = $this->plugin->getDataFolder() . "skin/" . $wingName . ".json";
+		if(!is_file($geometryPath)){
+			$player->sendMessage("The selected wing geometry is unavailable.");
+			return;
+		}
+		$geometry = file_get_contents($geometryPath);
+		if(!is_string($geometry)){
+			$player->sendMessage("The selected wing geometry could not be read.");
+			return;
+		}
 
-        $geometryPath = Main::$instance->getDataFolder() . $locate . "/" . $stuffName . ".json";
-        if (!is_file($geometryPath)) {
-            $player->sendMessage("The selected wing geometry is unavailable.");
-            return;
-        }
-        $geometry = file_get_contents($geometryPath);
-        if (!is_string($geometry)) {
-            $player->sendMessage("The selected wing geometry could not be read.");
-            return;
-        }
+		$compositePath = $this->imgTricky($skinPath, $wingName, "skin", [$dimensions[0], $dimensions[1], 4]);
+		if(!is_string($compositePath) || !is_file($compositePath)){
+			$player->sendMessage("The selected wing skin could not be prepared.");
+			return;
+		}
+		$image = @imagecreatefrompng($compositePath);
+		@unlink($compositePath);
+		if(!$image instanceof GdImage){
+			$player->sendMessage("The selected wing skin could not be prepared.");
+			return;
+		}
 
-        $path = $this->imgTricky($path, $stuffName, $locate, [$size[0], $size[1], 4]);
-        if (!is_string($path) || !is_file($path)) {
-            $player->sendMessage("The selected wing skin could not be prepared.");
-            return;
-        }
-        $img = @imagecreatefrompng($path);
-        if ($img === false) {
-            @unlink($path);
-            $player->sendMessage("The selected wing skin could not be prepared.");
-            return;
-        }
-        $skinbytes = "";
-        for ($y = 0; $y < $size[1]; $y++) {
-            for ($x = 0; $x < $size[0]; $x++) {
-                $colorat = @imagecolorat($img, $x, $y);
-                $a = ((~((int)($colorat >> 24))) << 1) & 0xff;
-                $r = ($colorat >> 16) & 0xff;
-                $g = ($colorat >> 8) & 0xff;
-                $b = $colorat & 0xff;
-                $skinbytes .= chr($r) . chr($g) . chr($b) . chr($a);
-            }
-        }
-        @imagedestroy($img);
-        @unlink($path);
-        $player->setSkin(new Skin($skin->getSkinId(), $skinbytes, "", "geometry." . $stuffName, $geometry));
-        $player->sendSkin();
-    }
-    
-    public function imgTricky(string $skinPath, string $stuffName, string $locate, array $size)
-    {
-        $path = Main::$instance->getDataFolder();
-        $down = @imagecreatefrompng($skinPath);
-        if ($down === false) {
-            return false;
-        }
-        $overlayPath = $path . $locate . "/" . $stuffName . ".png";
-        if (!is_file($overlayPath)) {
-            imagedestroy($down);
-            return false;
-        }
-        $upper = null;
-        if ($size[0] * $size[1] * $size[2] == 65536) {
-            $upper = $this->resize_image($overlayPath, 128, 128);
-        } else {
-            $upper = $this->resize_image($overlayPath, 64, 64);
-        }
-        if ($upper === false) {
-            imagedestroy($down);
-            return false;
-        }
-        //Remove black color out of the png
-        imagecolortransparent($upper, imagecolorallocatealpha($upper, 0, 0, 0, 127));
+		try{
+			$skinBytes = $this->skinDataFromImage($image, $dimensions[0], $dimensions[1]);
+		}finally{
+			imagedestroy($image);
+		}
+		if($skinBytes === null){
+			$player->sendMessage("The selected wing skin could not be read.");
+			return;
+		}
 
-        imagealphablending($down, true);
-        imagesavealpha($down, true);
-        imagecopymerge($down, $upper, 0, 0, 0, 0, $size[0], $size[1], 100);
-        $temporaryPath = tempnam($path, "wing-");
-        if ($temporaryPath === false || !imagepng($down, $temporaryPath)) {
-            if (is_string($temporaryPath) && is_file($temporaryPath)) {
-                unlink($temporaryPath);
-            }
-            imagedestroy($down);
-            imagedestroy($upper);
-            return false;
-        }
-        imagedestroy($down);
-        imagedestroy($upper);
-        return $temporaryPath;
+		$currentSkin = $player->getSkin();
+		$player->setSkin(new Skin($currentSkin->getSkinId(), $skinBytes, "", "geometry." . $wingName, $geometry));
+		$player->sendSkin();
+	}
 
-    }
+	/** @param array{0: int, 1: int, 2: int} $size */
+	public function imgTricky(string $skinPath, string $wingName, string $directory, array $size) : string|false{
+		$skinImage = @imagecreatefrompng($skinPath);
+		if(!$skinImage instanceof GdImage){
+			return false;
+		}
 
-    public function resize_image($file, $w, $h, $crop = FALSE)
-    {
-        $dimensions = @getimagesize($file);
-        if (!is_array($dimensions) || !isset($dimensions[0], $dimensions[1]) || $dimensions[0] <= 0 || $dimensions[1] <= 0) {
-            return false;
-        }
-        list($width, $height) = $dimensions;
-        $r = $width / $height;
-        if ($crop) {
-            if ($width > $height) {
-                $width = ceil($width - ($width * abs($r - $w / $h)));
-            } else {
-                $height = ceil($height - ($height * abs($r - $w / $h)));
-            }
-            $newwidth = $w;
-            $newheight = $h;
-        } else {
-            if ($w / $h > $r) {
-                $newwidth = $h * $r;
-                $newheight = $h;
-            } else {
-                $newheight = $w / $r;
-                $newwidth = $w;
-            }
-        }
-        $src = @imagecreatefrompng($file);
-        if ($src === false) {
-            return false;
-        }
-        $dst = imagecreatetruecolor($w, $h);
-        if ($dst === false) {
-            imagedestroy($src);
-            return false;
-        }
-        imagecolortransparent($dst, imagecolorallocatealpha($dst, 0, 0, 0, 127));
-        imagealphablending($dst, false);
-        imagesavealpha($dst, true);
-        imagecopyresampled($dst, $src, 0, 0, 0, 0, $newwidth, $newheight, $width, $height);
-        imagedestroy($src);
+		$overlayPath = $this->plugin->getDataFolder() . $directory . "/" . $wingName . ".png";
+		if(!is_file($overlayPath)){
+			imagedestroy($skinImage);
+			return false;
+		}
+		$overlay = $this->resize_image($overlayPath, $size[0], $size[1]);
+		if(!$overlay instanceof GdImage){
+			imagedestroy($skinImage);
+			return false;
+		}
 
-        return $dst;
-    }
+		$transparent = imagecolorallocatealpha($overlay, 0, 0, 0, 127);
+		if($transparent === false){
+			imagedestroy($skinImage);
+			imagedestroy($overlay);
+			return false;
+		}
+		imagecolortransparent($overlay, $transparent);
+		imagealphablending($skinImage, true);
+		imagesavealpha($skinImage, true);
+		if(!imagecopymerge($skinImage, $overlay, 0, 0, 0, 0, $size[0], $size[1], 100)){
+			imagedestroy($skinImage);
+			imagedestroy($overlay);
+			return false;
+		}
+
+		$temporaryPath = tempnam($this->plugin->getDataFolder(), "wing-");
+		if($temporaryPath === false || !imagepng($skinImage, $temporaryPath)){
+			if(is_string($temporaryPath) && is_file($temporaryPath)){
+				unlink($temporaryPath);
+			}
+			imagedestroy($skinImage);
+			imagedestroy($overlay);
+			return false;
+		}
+		imagedestroy($skinImage);
+		imagedestroy($overlay);
+		return $temporaryPath;
+	}
+
+	public function resize_image(string $file, int $width, int $height, bool $crop = false) : GdImage|false{
+		if($width <= 0 || $height <= 0){
+			return false;
+		}
+		$sourceDimensions = @getimagesize($file);
+		if($sourceDimensions === false || $sourceDimensions[0] <= 0 || $sourceDimensions[1] <= 0){
+			return false;
+		}
+		$source = @imagecreatefrompng($file);
+		if(!$source instanceof GdImage){
+			return false;
+		}
+		$target = imagecreatetruecolor($width, $height);
+		if(!$target instanceof GdImage){
+			imagedestroy($source);
+			return false;
+		}
+		$transparent = imagecolorallocatealpha($target, 0, 0, 0, 127);
+		if($transparent === false){
+			imagedestroy($source);
+			imagedestroy($target);
+			return false;
+		}
+		imagefill($target, 0, 0, $transparent);
+		imagealphablending($target, false);
+		imagesavealpha($target, true);
+
+		$sourceWidth = $sourceDimensions[0];
+		$sourceHeight = $sourceDimensions[1];
+		$sourceX = 0;
+		$sourceY = 0;
+		if($crop){
+			$sourceAspect = $sourceWidth / $sourceHeight;
+			$targetAspect = $width / $height;
+			if($sourceAspect > $targetAspect){
+				$cropWidth = max(1, (int) round($sourceHeight * $targetAspect));
+				$sourceX = intdiv($sourceWidth - $cropWidth, 2);
+				$sourceWidth = $cropWidth;
+			}else{
+				$cropHeight = max(1, (int) round($sourceWidth / $targetAspect));
+				$sourceY = intdiv($sourceHeight - $cropHeight, 2);
+				$sourceHeight = $cropHeight;
+			}
+			$destinationWidth = $width;
+			$destinationHeight = $height;
+		}else{
+			$scale = min($width / $sourceWidth, $height / $sourceHeight);
+			$destinationWidth = max(1, (int) round($sourceWidth * $scale));
+			$destinationHeight = max(1, (int) round($sourceHeight * $scale));
+		}
+
+		$copied = imagecopyresampled($target, $source, 0, 0, $sourceX, $sourceY, $destinationWidth, $destinationHeight, $sourceWidth, $sourceHeight);
+		imagedestroy($source);
+		if(!$copied){
+			imagedestroy($target);
+			return false;
+		}
+		return $target;
+	}
+
+	private function skinDataFromImage(GdImage $image, int $width, int $height) : ?string{
+		$skinBytes = "";
+		for($y = 0; $y < $height; $y++){
+			for($x = 0; $x < $width; $x++){
+				$color = imagecolorat($image, $x, $y);
+				if($color === false){
+					return null;
+				}
+				$alpha = ((~($color >> 24)) << 1) & 0xff;
+				$red = ($color >> 16) & 0xff;
+				$green = ($color >> 8) & 0xff;
+				$blue = $color & 0xff;
+				$skinBytes .= chr($red) . chr($green) . chr($blue) . chr($alpha);
+			}
+		}
+		return $skinBytes;
+	}
 }
