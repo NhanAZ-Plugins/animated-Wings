@@ -13,12 +13,40 @@ class setSkin
         $locate = "skin";
         $skin = $player->getSkin();
         $name = $player->getName();
-        $path = Main::$instance->getDataFolder() . "saveskin/" . $name . ".png";
+        $path = Main::$instance->getSkinPath($name);
+        if ($path === false || !is_file($path)) {
+            $player->sendMessage("Your player skin is not available yet. Please reconnect and try again.");
+            return;
+        }
 
-        $size = getimagesize($path);
+        $size = @getimagesize($path);
+        if (!is_array($size) || !isset($size[0], $size[1]) || $size[0] <= 0 || $size[1] <= 0) {
+            $player->sendMessage("Your saved player skin could not be read.");
+            return;
+        }
+
+        $geometryPath = Main::$instance->getDataFolder() . $locate . "/" . $stuffName . ".json";
+        if (!is_file($geometryPath)) {
+            $player->sendMessage("The selected wing geometry is unavailable.");
+            return;
+        }
+        $geometry = file_get_contents($geometryPath);
+        if (!is_string($geometry)) {
+            $player->sendMessage("The selected wing geometry could not be read.");
+            return;
+        }
 
         $path = $this->imgTricky($path, $stuffName, $locate, [$size[0], $size[1], 4]);
+        if (!is_string($path) || !is_file($path)) {
+            $player->sendMessage("The selected wing skin could not be prepared.");
+            return;
+        }
         $img = @imagecreatefrompng($path);
+        if ($img === false) {
+            @unlink($path);
+            $player->sendMessage("The selected wing skin could not be prepared.");
+            return;
+        }
         $skinbytes = "";
         for ($y = 0; $y < $size[1]; $y++) {
             for ($x = 0; $x < $size[0]; $x++) {
@@ -31,19 +59,32 @@ class setSkin
             }
         }
         @imagedestroy($img);
-        $player->setSkin(new Skin($skin->getSkinId(), $skinbytes, "", "geometry." . $stuffName, file_get_contents(Main::$instance->getDataFolder() . $locate . "/" . $stuffName . ".json")));
+        @unlink($path);
+        $player->setSkin(new Skin($skin->getSkinId(), $skinbytes, "", "geometry." . $stuffName, $geometry));
         $player->sendSkin();
     }
     
     public function imgTricky(string $skinPath, string $stuffName, string $locate, array $size)
     {
         $path = Main::$instance->getDataFolder();
-        $down = imagecreatefrompng($skinPath);
+        $down = @imagecreatefrompng($skinPath);
+        if ($down === false) {
+            return false;
+        }
+        $overlayPath = $path . $locate . "/" . $stuffName . ".png";
+        if (!is_file($overlayPath)) {
+            imagedestroy($down);
+            return false;
+        }
         $upper = null;
         if ($size[0] * $size[1] * $size[2] == 65536) {
-            $upper = $this->resize_image($path . $locate . "/" . $stuffName . ".png", 128, 128);
+            $upper = $this->resize_image($overlayPath, 128, 128);
         } else {
-            $upper = $this->resize_image($path . $locate . "/" . $stuffName . ".png", 64, 64);
+            $upper = $this->resize_image($overlayPath, 64, 64);
+        }
+        if ($upper === false) {
+            imagedestroy($down);
+            return false;
         }
         //Remove black color out of the png
         imagecolortransparent($upper, imagecolorallocatealpha($upper, 0, 0, 0, 127));
@@ -51,14 +92,28 @@ class setSkin
         imagealphablending($down, true);
         imagesavealpha($down, true);
         imagecopymerge($down, $upper, 0, 0, 0, 0, $size[0], $size[1], 100);
-        imagepng($down, $path . 'temp.png');
-        return Main::$instance->getDataFolder() . 'temp.png';
+        $temporaryPath = tempnam($path, "wing-");
+        if ($temporaryPath === false || !imagepng($down, $temporaryPath)) {
+            if (is_string($temporaryPath) && is_file($temporaryPath)) {
+                unlink($temporaryPath);
+            }
+            imagedestroy($down);
+            imagedestroy($upper);
+            return false;
+        }
+        imagedestroy($down);
+        imagedestroy($upper);
+        return $temporaryPath;
 
     }
 
     public function resize_image($file, $w, $h, $crop = FALSE)
     {
-        list($width, $height) = getimagesize($file);
+        $dimensions = @getimagesize($file);
+        if (!is_array($dimensions) || !isset($dimensions[0], $dimensions[1]) || $dimensions[0] <= 0 || $dimensions[1] <= 0) {
+            return false;
+        }
+        list($width, $height) = $dimensions;
         $r = $width / $height;
         if ($crop) {
             if ($width > $height) {
@@ -77,12 +132,20 @@ class setSkin
                 $newwidth = $w;
             }
         }
-        $src = imagecreatefrompng($file);
+        $src = @imagecreatefrompng($file);
+        if ($src === false) {
+            return false;
+        }
         $dst = imagecreatetruecolor($w, $h);
+        if ($dst === false) {
+            imagedestroy($src);
+            return false;
+        }
         imagecolortransparent($dst, imagecolorallocatealpha($dst, 0, 0, 0, 127));
         imagealphablending($dst, false);
         imagesavealpha($dst, true);
         imagecopyresampled($dst, $src, 0, 0, 0, 0, $newwidth, $newheight, $width, $height);
+        imagedestroy($src);
 
         return $dst;
     }

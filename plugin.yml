@@ -3,6 +3,8 @@ api: 4.8.1
 version: 1.5
 main: CustomWing\Main
 author: Yukari
+depend:
+- FormAPI
 commands:
   customwing:
     description: "CustomWing"

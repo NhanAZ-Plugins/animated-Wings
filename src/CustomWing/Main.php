@@ -31,9 +31,12 @@ class Main extends PluginBase implements Listener {
 	
 	public function onEnable(): void{
 		self::$instance = $this;
-    	$this->getServer()->getPluginManager()->registerEvents($this, $this);
-    	$this->checkSkin();
     	$this->checkRequirement();
+        if (!$this->isEnabled()) {
+            return;
+        }
+        $this->checkSkin();
+        $this->getServer()->getPluginManager()->registerEvents($this, $this);
     	$this->getLogger()->info($this->json . " Geometry Skin Confirmed");
 	}
 	
@@ -53,34 +56,64 @@ class Main extends PluginBase implements Listener {
 	public function dataReceiveEv(DataPacketReceiveEvent $ev)
     {
         $packet = $ev->getPacket();
-        $player = $ev->getOrigin()->getPlayer();
         if ($packet instanceof LoginPacket) {
             $data = self::decodeClientData($packet->clientDataJwt);
             $name = $data->ThirdPartyName;
-            if ($data->PersonaSkin) {
-                if (!file_exists($this->getDataFolder() . "saveskin")) {
-                    mkdir($this->getDataFolder() . "saveskin", 0777);
-                }
-                copy($this->getDataFolder()."steve.png",$this->getDataFolder() . "saveskin/{$name}.png");
+            $skinPath = $this->getSkinPath($name);
+            if ($skinPath === false) {
+                $this->getLogger()->warning("Ignored login skin data with an invalid player name.");
                 return;
             }
-            if ($data->SkinImageHeight == 32) {
+
+            $saveDirectory = dirname($skinPath);
+            if (!is_dir($saveDirectory) && !mkdir($saveDirectory, 0777, true) && !is_dir($saveDirectory)) {
+                $this->getLogger()->error("Could not create the player skin directory.");
+                return;
+            }
+
+            if ($data->PersonaSkin) {
+                $defaultSkin = $this->getDataFolder() . "steve.png";
+                if (!is_file($defaultSkin) || !copy($defaultSkin, $skinPath)) {
+                    $this->getLogger()->warning("Could not save the fallback skin for a persona-skin player.");
+                }
+                return;
+            }
+
+            $skinBytes = base64_decode($data->SkinData, true);
+            if (!is_string($skinBytes)) {
+                $this->getLogger()->warning("Ignored invalid encoded player skin data.");
+                return;
             }
             $saveSkin = new saveSkin();
-            $saveSkin->saveSkin(base64_decode($data->SkinData, true), $name);
+            if (!$saveSkin->saveSkin($skinBytes, $name)) {
+                $this->getLogger()->warning("Could not save an unsupported or invalid player skin.");
+            }
         }
     }
     
     public function onQuit(PlayerQuitEvent $ev)
     {
-        $name = $ev->getPlayer()->getName();
-
         $willDelete = $this->getConfig()->getNested('DeleteSkinAfterQuitting');
         if ($willDelete) {
-            if (file_exists($this->getDataFolder() . "saveskin/{$name}.png")) {
-                unlink($this->getDataFolder() . "saveskin/{$name}.png");
+            $skinPath = $this->getSkinPath($ev->getPlayer()->getName());
+            if ($skinPath !== false && is_file($skinPath)) {
+                unlink($skinPath);
             }
         }
+    }
+
+    /**
+     * Maps untrusted client names to a safe, stable filename without exposing them in the path.
+     *
+     * @return string|false
+     */
+    public function getSkinPath($name)
+    {
+        if (!is_string($name) || $name === "" || strlen($name) > 256 || preg_match('/[\x00-\x1f\x7f]/', $name)) {
+            return false;
+        }
+        $key = hash("sha256", strtolower($name));
+        return $this->getDataFolder() . "saveskin/" . $key . ".png";
     }
     
     public function Form($sender, string $txt){
@@ -242,22 +275,20 @@ class Main extends PluginBase implements Listener {
     }
     
     public function checkSkin(){
-      $Available = [];
-      if(!file_exists($this->getDataFolder() . "skin")){
-        mkdir($this->getDataFolder() . "skin");
-      }
+      $available = [];
       $path = $this->getDataFolder() . "skin/";
-      $allskin = scandir($path);
-      foreach($allskin as $file){
-          array_push($Available, preg_replace("/.json/", "", $file));
+      if(!is_dir($path) && !mkdir($path, 0777, true) && !is_dir($path)){
+        $this->getLogger()->error("Could not create the bundled wing asset directory.");
+        $this->json = 0;
+        return;
       }
-      foreach($Available as $value){
-        if(!in_array($value . ".png", $allskin)){
-          unset($Available[array_search($value, $Available)]);
+      foreach(glob($path . "*.json") as $geometryFile){
+        $name = pathinfo($geometryFile, PATHINFO_FILENAME);
+        if(is_file($path . $name . ".png")){
+          $available[$name] = true;
         }
       }
-      $this->json = count($Available);
-      $Available = [];
+      $this->json = count($available);
     }
     
     public function checkRequirement(){

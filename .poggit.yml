@@ -1,5 +1,6 @@
 --- # Poggit-CI Manifest. Open the CI at https://poggit.pmmp.io/ci/LyrexGit/animated-Wings
-build-by-default: true
+# Keep automatic PHAR publication disabled until bundled asset rights are verified.
+build-by-default: false
 branches:
 - main
 projects:

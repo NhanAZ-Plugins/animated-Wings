@@ -2,8 +2,6 @@
 
 namespace CustomWing;
 
-use pocketmine\entity\Skin;
-
 class saveSkin
 {
 
@@ -24,23 +22,31 @@ class saveSkin
 
     public function saveSkin(string $skin,string $name)
     {
-        $path = Main::$instance->getDataFolder();
-        if (!file_exists($path . "saveskin")) {
-            mkdir($path . "saveskin", 0777);
+        $path = Main::$instance->getSkinPath($name);
+        if ($path === false) {
+            return false;
         }
         $img = $this->skinDataToImage($skin);
-        if ($img == null) {
-            return;
+        if ($img === null) {
+            return false;
         }
-        imagepng($img, $path . "saveskin/" . $name . ".png");
+        $saved = imagepng($img, $path);
+        imagedestroy($img);
+        return $saved;
     }
 
     public function skinDataToImage(string $skinData)
     {
         $size = strlen($skinData);
+        if (!isset($this->skin_widght_map[$size], $this->skin_height_map[$size])) {
+            return null;
+        }
 
         $width = $this->skin_widght_map[$size];
         $height = $this->skin_height_map[$size];
+        if ($width * $height * 4 !== $size) {
+            return null;
+        }
         $skinPos = 0;
         $image = imagecreatetruecolor($width, $height);
         if ($image === false) {
