@@ -10,8 +10,21 @@ namespace pocketmine\plugin {
     }
 }
 
+namespace pocketmine\form {
+    interface Form extends \JsonSerializable {
+        public function handleResponse(\pocketmine\player\Player $player, $data): void;
+    }
+
+    class FormValidationException extends \RuntimeException {}
+}
+
+namespace pocketmine\player {
+    class Player {}
+}
+
 namespace {
     require dirname(__DIR__) . "/src/CustomWing/Main.php";
+    require dirname(__DIR__) . "/src/CustomWing/WingMenu.php";
     require dirname(__DIR__) . "/src/CustomWing/saveSkin.php";
 
     function check($condition, $message) {
@@ -31,5 +44,22 @@ namespace {
     check($plugin->getSkinPath("bad\nname") === false, "Control characters in client names must be rejected.");
     check((new \CustomWing\saveSkin())->skinDataToImage("invalid") === null, "Unsupported skin payload lengths must be rejected before image conversion.");
 
-    echo "CustomWing path and invalid skin payload checks passed.\n";
+    $selections = [];
+    $menu = new \CustomWing\WingMenu("Wings", "Select one", ["Kagune", "Exit"], static function (\pocketmine\player\Player $player, int $selection) use (&$selections): void {
+        $selections[] = $selection;
+    });
+    $encodedMenu = $menu->jsonSerialize();
+    check($encodedMenu["type"] === "form" && count($encodedMenu["buttons"]) === 2, "The built-in API 5 menu must serialize a simple form.");
+    check($encodedMenu["buttons"][0]["text"] === "Kagune", "Form button labels must remain visible in the serialized response.");
+    $menu->handleResponse(new \pocketmine\player\Player(), null);
+    check($selections === [], "Closing the form must not trigger a selection.");
+    $menu->handleResponse(new \pocketmine\player\Player(), 0);
+    check($selections === [0], "A valid menu response must reach the selection handler.");
+    try {
+        $menu->handleResponse(new \pocketmine\player\Player(), 2);
+        check(false, "Out-of-range form responses must be rejected.");
+    } catch (\pocketmine\form\FormValidationException) {
+    }
+
+    echo "CustomWing API 5 menu, path safety and invalid skin payload checks passed.\n";
 }

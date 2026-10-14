@@ -1,10 +1,9 @@
 name: CustomWing
-api: 4.8.1
-version: 1.5
+api: 5.0.0
+version: 2.0.0
 main: CustomWing\Main
 author: Yukari
-depend:
-- FormAPI
+description: Applies bundled wing geometry to player skins
 commands:
   customwing:
     description: "CustomWing"

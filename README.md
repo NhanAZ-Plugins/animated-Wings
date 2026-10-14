@@ -1,10 +1,13 @@
 # animated-Wings
 
-This repository contains the historical `CustomWing` plugin, which offers wing skins through a FormAPI menu. The manifest credits Yukari, and the preserved Git history includes asset uploads by LyrexGit.
+`animated-Wings` is the historical `CustomWing` plugin. It offers bundled wing skins through an in-game menu and retains the original manifest credit to Yukari.
 
-## Compatibility and dependencies
+## Compatibility
 
-`plugin.yml` declares PocketMine-MP API `4.8.1` and requires FormAPI. The source uses the API 4 login packet/client skin classes. It has not been ported or tested on Axolotl-PM 5. Do not deploy this source on a current Axolotl-PM server.
+- Minimum Axolotl-PM API: `5.0.0`.
+- The plugin uses Axolotl-PM's built-in form API and does not require FormAPI.
+- The pinned CI matrix checks API 5.0.0 and 5.49.1 source revisions. This does not establish compatibility with every API 5.x release.
+- The plugin requires PHP's GD extension to process player skin images.
 
 ## Player skin data
 
@@ -14,6 +17,6 @@ These files still contain player appearance data while present. Protect the plug
 
 ## Bundled asset status
 
-The bundled wing PNG and geometry assets are preserved unchanged. The repository has no LICENSE or documented redistribution grant for those assets; the manifest credit and Git history do not establish reuse rights. The repository has no GitHub Actions workflow. Poggit-CI automatic builds are disabled while asset rights are unverified, so this update does not publish a PHAR. No stable release or verified Axolotl-PM 5 runtime test exists.
+The bundled wing PNG and geometry assets are preserved unchanged. The repository has no LICENSE or documented redistribution grant for those assets; the manifest credit and Git history do not establish reuse rights. The GitHub Actions workflow checks PHPStan, API 5 PHAR builds, artifact contents and plugin startup; it does not publish a stable release. Poggit-CI automatic builds remain disabled while asset rights are unverified.
 
 For questions about the NhanAZ ecosystem, use [NhanAZ Discord](https://discord.gg/j2X83ujT6c).
