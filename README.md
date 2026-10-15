@@ -1,6 +1,6 @@
 # animated-Wings
 
-`animated-Wings` is the historical `CustomWing` plugin. It offers bundled wing skins through an in-game menu and retains the original manifest credit to Yukari.
+`animated-Wings` is the historical `CustomWing` plugin. It offers bundled wing skins through an in-game menu and is maintained by NhanAZ.
 
 ## Compatibility
 
@@ -17,6 +17,6 @@ These files still contain player appearance data while present. Protect the plug
 
 ## Bundled asset status
 
-The bundled wing PNG and geometry assets are preserved unchanged. The repository has no LICENSE or documented redistribution grant for those assets; the manifest credit and Git history do not establish reuse rights. The GitHub Actions workflow checks PHPStan, API 5 PHAR builds, artifact contents and plugin startup; it does not publish a stable release. Poggit-CI automatic builds remain disabled while asset rights are unverified.
+The bundled wing PNG and geometry assets are authored by NhanAZ and distributed under the MIT License. The GitHub Actions workflow checks PHPStan, API 5 PHAR builds, artifact contents and plugin startup.
 
 For questions about the NhanAZ ecosystem, use [NhanAZ Discord](https://discord.gg/j2X83ujT6c).

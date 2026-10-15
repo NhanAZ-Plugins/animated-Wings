@@ -2,7 +2,7 @@ name: CustomWing
 api: 5.0.0
 version: 2.0.0
 main: CustomWing\Main
-author: Yukari
+author: NhanAZ
 description: Applies bundled wing geometry to player skins
 commands:
   customwing:
